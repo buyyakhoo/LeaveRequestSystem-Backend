@@ -88,6 +88,49 @@ export async function loginWithEmailPassword(email: string, password: string) {
   }
 }
 
+// ─── Google SSO Login ─────────────────────────────────────────────────────────
+
+export async function loginWithGoogle(googleUserId: string, email: string) {
+  const employee = await prisma.employees.findUnique({
+    where: { email },
+    include: { employee_identities: true },
+  })
+
+  // ไม่เจอ employee → email นี้ไม่ใช่ employee ของบริษัท
+  if (!employee) throw new Error('NOT_AN_EMPLOYEE')
+  if (employee.status !== 'active') throw new Error('ACCOUNT_DISABLED')
+
+  const googleIdentity = employee.employee_identities.find(i => i.provider === 'google')
+
+  if (googleIdentity) {
+    // เคย link Google แล้ว — ตรวจว่าเป็น Google account เดิมหรือเปล่า
+    if (googleIdentity.provider_id !== googleUserId) {
+      // มีคนพยายาม login ด้วย Google account คนละตัวกับที่ link ไว้
+      throw new Error('GOOGLE_ACCOUNT_MISMATCH')
+    }
+    // ตรงกัน → ผ่านได้เลย
+  } else {
+    // ยังไม่เคย login ด้วย Google → เพิ่ม google identity ใหม่
+    // local identity ยังอยู่เหมือนเดิม ทำให้ login ได้ทั้ง 2 แบบ
+    await prisma.employee_identities.create({
+      data: {
+        employee_id: employee.id,
+        provider: 'google',
+        provider_id: googleUserId,
+      },
+    })
+  }
+
+  return {
+    id: employee.id,
+    employee_code: employee.employee_code,
+    email: employee.email,
+    first_name: employee.first_name,
+    last_name: employee.last_name,
+    role: employee.role,
+  }
+}
+
 // ─── Password Hashing ─────────────────────────────────────────────────────────
 
 export async function hashPassword(password: string): Promise<string> {
