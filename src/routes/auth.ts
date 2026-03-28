@@ -3,8 +3,8 @@ import { Hono } from 'hono'
 import { sign } from 'hono/jwt'
 import { loginWithEmailPassword, loginWithGoogle } from '../services/user_service.js'
 import { buildGoogleAuthUrl, exchangeCodeForTokens, getGoogleUserInfo } from '../services/google_auth_service.js'
-import { requireAuth } from '../middleware/auth.js'
 import { prisma } from '../lib/prisma.js'
+import { requireAuth } from '../middleware/auth.js'
 
 const auth = new Hono()
 
@@ -134,6 +134,7 @@ auth.get('/google/callback', async (c) => {
         sub: user.id,
         email: user.email,
         role: user.role,
+        department_id: user.department_id,
         exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8,
       },
       process.env.JWT_SECRET!
