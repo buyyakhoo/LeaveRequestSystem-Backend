@@ -1,84 +1,78 @@
 import { Hono } from 'hono'
-import { authMiddleware, requireRole } from '../middleware/auth.middleware'
-import * as EmployeeService from '../services/employee.service'
-import { validatePassword } from '../lib/owasp'
+import { requireAuth, requireRole } from '../middleware/auth.js'
+import type { AuthVariables } from '../middleware/auth.js'
+import * as EmployeeService from '../services/employee.service.js'
+import { validatePassword } from '../services/user_service.js'
 
-const employeeRouter = new Hono()
+const employeeRouter = new Hono<{ Variables: AuthVariables }>()
 
-// ทุก route ต้อง login ก่อน
-employeeRouter.use('*', authMiddleware)
+employeeRouter.use('*', requireAuth) // ทุก route ต้อง login ก่อน
 
-// GET /employees — admin เห็นทั้งหมด, manager เห็นแผนกตัวเอง
+// GET /employees
+// admin → เห็นพนักงานทุกคน
+// manager → เห็นเฉพาะแผนกตัวเอง (กรองด้วย department_id จาก token)
 employeeRouter.get('/', requireRole('admin', 'manager'), async (c) => {
-  const user = c.get('user')
-  const employees = await EmployeeService.getEmployees(user.role, user.department ?? null)
+  const payload = c.get('jwtPayload')
+  const departmentId = (payload as any).department_id ?? null
+  const employees = await EmployeeService.getEmployees(payload.role, departmentId)
   return c.json({ data: employees })
 })
 
-// GET /employees/:id — admin/manager ดูรายละเอียด
+// GET /employees/:id
+// ดูรายละเอียดพนักงานคนเดียว
 employeeRouter.get('/:id', requireRole('admin', 'manager'), async (c) => {
   const emp = await EmployeeService.getEmployeeById(c.req.param('id'))
   if (!emp) return c.json({ error: 'Not found' }, 404)
   return c.json(emp)
 })
 
-// POST /employees — admin และ manager (แผนกตัวเอง) เพิ่มพนักงานได้
+// POST /employees
+// เพิ่มพนักงานใหม่ + เช็ค OWASP password policy
+// manager จะถูก force ให้เพิ่มได้แค่แผนกตัวเอง role user
 employeeRouter.post('/', requireRole('admin', 'manager'), async (c) => {
   const body = await c.req.json()
-  const user = c.get('user')
+  const payload = c.get('jwtPayload')
 
-  // validate password ก่อนสร้าง
-  const check = validatePassword(body.password)
-  if (!check.valid) {
-    return c.json({ error: 'รหัสผ่านไม่ผ่านเกณฑ์', details: check.errors }, 400)
+  const errors = validatePassword(body.password ?? '')
+  if (errors.length > 0) return c.json({ error: 'Password policy violation', details: errors }, 400)
+
+  if (payload.role === 'manager') {
+    body.departmentId = (payload as any).department_id // force แผนกตัวเอง
+    body.role = 'user'                                 // force role user
   }
-
-  // manager เพิ่มได้เฉพาะแผนกตัวเอง
-  if (user.role === 'manager') {
-    body.department = user.department
-    body.role = 'user' // manager เพิ่มได้แค่ user
-  }
-
   try {
-    const emp = await EmployeeService.createEmployee(body, user.sub, user.role)
+    const emp = await EmployeeService.createEmployee(body, payload.sub.toString(), payload.role)
     return c.json(emp, 201)
   } catch (e: any) {
-    if (e.message === 'EMAIL_EXISTS')
-      return c.json({ error: 'Email นี้มีในระบบแล้ว' }, 409)
+    if (e.message === 'EMAIL_EXISTS') return c.json({ error: 'Email นี้มีในระบบแล้ว' }, 409)
     throw e
   }
 })
 
-// PATCH /employees/:id/disable — admin/manager disable พนักงาน
+// PATCH /employees/:id/disable
+// เปลี่ยน status เป็น disabled (ห้าม delete)
 employeeRouter.patch('/:id/disable', requireRole('admin', 'manager'), async (c) => {
-  const user = c.get('user')
+  const payload = c.get('jwtPayload')
   try {
-    const result = await EmployeeService.disableEmployee(
-      c.req.param('id'),
-      user.sub,
-      user.role
-    )
+    const result = await EmployeeService.disableEmployee(c.req.param('id'), payload.sub.toString(), payload.role)
     return c.json(result)
   } catch (e: any) {
-    if (e.message === 'NOT_FOUND')      return c.json({ error: 'ไม่พบพนักงาน' }, 404)
+    if (e.message === 'NOT_FOUND') return c.json({ error: 'ไม่พบพนักงาน' }, 404)
     if (e.message === 'ALREADY_DISABLED') return c.json({ error: 'Disabled แล้ว' }, 409)
     if (e.message === 'CANNOT_DISABLE_ADMIN') return c.json({ error: 'ไม่สามารถ disable admin' }, 403)
     throw e
   }
 })
 
-// PATCH /employees/:id/profile — แก้ข้อมูลตัวเอง (ทุก role)
+// PATCH /employees/:id/profile
+// แก้ข้อมูลตัวเอง — user แก้ได้แค่ของตัวเอง admin/manager แก้ได้ทุกคน
 employeeRouter.patch('/:id/profile', async (c) => {
-  const user = c.get('user')
+  const payload = c.get('jwtPayload')
   const targetId = c.req.param('id')
-
-  // user แก้ได้แค่ของตัวเอง
-  if (user.role === 'user' && user.sub !== targetId) {
+  if (payload.role === 'user' && payload.sub.toString() !== targetId)
     return c.json({ error: 'Forbidden' }, 403)
-  }
-
   const body = await c.req.json()
-  const result = await EmployeeService.updateProfile(targetId, body, user.sub, user.role)
+  const result = await EmployeeService.updateProfile(targetId, body, payload.sub.toString(), payload.role)
   return c.json(result)
 })
 

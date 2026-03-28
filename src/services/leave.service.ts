@@ -1,8 +1,7 @@
-import { db } from '../db/index'
-import { logEvent } from './event-log.service'
+import { prisma } from '../lib/prisma.js'
+import { logEvent } from './event-log.service.js'
 
-// ─── POST /leaves ────────────────────────────────────────────
-// scenario: User กดปุ่ม Submit ยื่นคำร้องขอลา
+// createLeaveRequest: สร้างคำร้องขอลา
 export const createLeaveRequest = async (
   data: {
     leaveType: string
@@ -13,138 +12,90 @@ export const createLeaveRequest = async (
   },
   actorId: string
 ) => {
-  // เช็คว่ามีคำร้องซ้อนช่วงเวลาเดิมไหม
-  const overlap = await db.query(
-    `SELECT id FROM leave_requests
-     WHERE employee_id = $1
-       AND status != 'rejected'
-       AND (start_date, end_date) OVERLAPS ($2::date, $3::date)`,
-    [actorId, data.startDate, data.endDate]
-  )
-  if (overlap.rows[0]) throw new Error('DATE_OVERLAP')
+  const start = new Date(data.startDate)
+  const end = new Date(data.endDate)
 
-  const result = await db.query(
-    `INSERT INTO leave_requests
-      (employee_id, leave_type, start_date, end_date, reason, delegate_name)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING *`,
-    [
-      actorId,
-      data.leaveType,
-      data.startDate,
-      data.endDate,
-      data.reason,
-      data.delegateName ?? null,
-    ]
-  )
+  // เช็ควันที่ซ้อนกับคำร้องที่ pending/approved อยู่
+  const overlap = await prisma.leave_requests.findFirst({
+    where: {
+      employee_id: actorId,
+      status: { not: 'rejected' },
+      start_date: { lte: end },
+      end_date: { gte: start },
+    },
+  })
+  if (overlap) throw new Error('DATE_OVERLAP')
 
-  await logEvent({
-    actorId,
-    actorRole: 'user',
-    action: 'LEAVE_REQUEST',
-    targetId: result.rows[0].id,
-    targetType: 'leave_request',
-    detail: { leaveType: data.leaveType, startDate: data.startDate, endDate: data.endDate },
+  const result = await prisma.leave_requests.create({
+    data: {
+      employee_id: actorId,
+      leave_type: data.leaveType as any,
+      start_date: start,
+      end_date: end,
+      reason: data.reason,
+      delegate_name: data.delegateName ?? null,
+    },
   })
 
-  return result.rows[0]
-}
+  // บันทึก event log
+  await logEvent({
+    actorId, actorRole: 'user', action: 'LEAVE_REQUEST',
+    targetId: result.id, targetType: 'leave_request',
+    detail: { leaveType: data.leaveType, startDate: data.startDate },
+  })
 
-// ─── GET /leaves ─────────────────────────────────────────────
-// scenario: User เปิดหน้าดูประวัติการลาของตัวเอง
-// scenario: HR เปิดหน้าดูคำร้องรออนุมัติ
+  return result
+}
+// getLeaveRequests: ดึงคำร้องการลา
 export const getLeaveRequests = async (
   actorId: string,
   actorRole: string,
   status?: string
 ) => {
-  if (actorRole === 'user') {
-    const result = await db.query(
-      `SELECT lr.*, e.first_name, e.last_name, e.department
-       FROM leave_requests lr
-       JOIN employees e ON lr.employee_id = e.id
-       WHERE lr.employee_id = $1
-         AND ($2::text IS NULL OR lr.status = $2::leave_status)
-       ORDER BY lr.created_at DESC`,
-      [actorId, status ?? null]
-    )
-    return result.rows
+  // user → WHERE employee_id = ตัวเอง
+  const where = {
+    ...(actorRole === 'user' && { employee_id: actorId }),
+    ...(status && { status: status as any }),
   }
 
-  // admin/manager
-  const result = await db.query(
-    `SELECT lr.*, e.first_name, e.last_name, e.department
-     FROM leave_requests lr
-     JOIN employees e ON lr.employee_id = e.id
-     WHERE ($1::text IS NULL OR lr.status = $1::leave_status)
-     ORDER BY lr.created_at DESC`,
-    [status ?? null]
-  )
-  return result.rows
+  return prisma.leave_requests.findMany({
+    where,
+    include: {
+      employee: {
+        select: { first_name: true, last_name: true, department: true },
+      },
+    },
+    orderBy: { created_at: 'desc' },
+  })
 }
 
-// ─── PATCH /leaves/:id/approve ───────────────────────────────
-// scenario: HR กดปุ่ม "อนุมัติ" ข้างคำร้องรออนุมัติ
-export const approveLeave = async (
-  leaveId: string,
-  actorId: string,
-  actorRole: string
-) => {
-  const leave = await db.query(
-    'SELECT * FROM leave_requests WHERE id = $1',
-    [leaveId]
-  )
-  if (!leave.rows[0]) throw new Error('NOT_FOUND')
-  if (leave.rows[0].status !== 'pending') throw new Error('NOT_PENDING')
+// approveLeave + rejectLeave
+// เช็คว่า status ยัง pending อยู่ไหม
+// update status + reviewed_by + reviewed_at
+export const approveLeave = async (leaveId: string, actorId: string, actorRole: string) => {
+  const leave = await prisma.leave_requests.findUnique({ where: { id: leaveId } })
+  if (!leave) throw new Error('NOT_FOUND')
+  if (leave.status !== 'pending') throw new Error('NOT_PENDING')
 
-  const result = await db.query(
-    `UPDATE leave_requests
-     SET status = 'approved', reviewed_by = $1, reviewed_at = NOW()
-     WHERE id = $2
-     RETURNING *`,
-    [actorId, leaveId]
-  )
-
-  await logEvent({
-    actorId,
-    actorRole,
-    action: 'LEAVE_APPROVE',
-    targetId: leaveId,
-    targetType: 'leave_request',
+  const result = await prisma.leave_requests.update({
+    where: { id: leaveId },
+    data: { status: 'approved', reviewed_by: actorId, reviewed_at: new Date() },
   })
 
-  return result.rows[0]
+  await logEvent({ actorId, actorRole, action: 'LEAVE_APPROVE', targetId: leaveId, targetType: 'leave_request' })
+  return result
 }
 
-// ─── PATCH /leaves/:id/reject ────────────────────────────────
-// scenario: HR กดปุ่ม "ไม่อนุมัติ"
-export const rejectLeave = async (
-  leaveId: string,
-  actorId: string,
-  actorRole: string
-) => {
-  const leave = await db.query(
-    'SELECT * FROM leave_requests WHERE id = $1',
-    [leaveId]
-  )
-  if (!leave.rows[0]) throw new Error('NOT_FOUND')
-  if (leave.rows[0].status !== 'pending') throw new Error('NOT_PENDING')
+export const rejectLeave = async (leaveId: string, actorId: string, actorRole: string) => {
+  const leave = await prisma.leave_requests.findUnique({ where: { id: leaveId } })
+  if (!leave) throw new Error('NOT_FOUND')
+  if (leave.status !== 'pending') throw new Error('NOT_PENDING')
 
-  const result = await db.query(
-    `UPDATE leave_requests
-     SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW()
-     WHERE id = $2
-     RETURNING *`,
-    [actorId, leaveId]
-  )
-
-  await logEvent({
-    actorId,
-    actorRole,
-    action: 'LEAVE_REJECT',
-    targetId: leaveId,
-    targetType: 'leave_request',
+  const result = await prisma.leave_requests.update({
+    where: { id: leaveId },
+    data: { status: 'rejected', reviewed_by: actorId, reviewed_at: new Date() },
   })
 
-  return result.rows[0]
+  await logEvent({ actorId, actorRole, action: 'LEAVE_REJECT', targetId: leaveId, targetType: 'leave_request' })
+  return result
 }

@@ -1,39 +1,21 @@
 import { Hono } from 'hono'
-import { authMiddleware, requireRole } from '../middleware/auth.middleware'
-import { db } from '../db/index'
+import { requireAuth, requireRole } from '../middleware/auth.js'
+import type { AuthVariables } from '../middleware/auth.js'
+import { getEventLogs } from '../services/event-log.service.js'
 
-const eventLogRouter = new Hono()
+const eventLogRouter = new Hono<{ Variables: AuthVariables }>()
 
-eventLogRouter.use('*', authMiddleware)
+eventLogRouter.use('*', requireAuth) //login ก่อน
 
-// GET /event-logs — admin เห็นทั้งหมด, manager เห็นเฉพาะ action ของตัวเอง
+// GET /event-logs
+// admin → เห็น log ทุกคน
+// manager → เห็นเฉพาะ log ของตัวเอง
+// ?limit=20 จำกัดจำนวน default 50
 eventLogRouter.get('/', requireRole('admin', 'manager'), async (c) => {
-  const user = c.get('user')
+  const payload = c.get('jwtPayload')
   const limit = Number(c.req.query('limit') ?? 50)
-
-  if (user.role === 'manager') {
-    const result = await db.query(
-      `SELECT el.*, e.email as actor_email
-       FROM event_logs el
-       LEFT JOIN employees e ON el.actor_id = e.id
-       WHERE el.actor_id = $1
-       ORDER BY el.timestamp DESC
-       LIMIT $2`,
-      [user.sub, limit]
-    )
-    return c.json({ data: result.rows })
-  }
-
-  // admin เห็นทั้งหมด
-  const result = await db.query(
-    `SELECT el.*, e.email as actor_email
-     FROM event_logs el
-     LEFT JOIN employees e ON el.actor_id = e.id
-     ORDER BY el.timestamp DESC
-     LIMIT $1`,
-    [limit]
-  )
-  return c.json({ data: result.rows })
+  const result = await getEventLogs(payload.sub.toString(), payload.role, limit)
+  return c.json({ data: result })
 })
 
 export default eventLogRouter

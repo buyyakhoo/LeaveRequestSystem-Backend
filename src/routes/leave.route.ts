@@ -1,59 +1,63 @@
 import { Hono } from 'hono'
-import { authMiddleware, requireRole } from '../middleware/auth.middleware'
-import * as LeaveService from '../services/leave.service'
+import { requireAuth, requireRole } from '../middleware/auth.js'
+import type { AuthVariables } from '../middleware/auth.js'
+import * as LeaveService from '../services/leave.service.js'
 
-const leaveRouter = new Hono()
+const leaveRouter = new Hono<{ Variables: AuthVariables }>()
 
-leaveRouter.use('*', authMiddleware)
+leaveRouter.use('*', requireAuth) // ต้อง login ก่อน
 
-// POST /leaves — user ยื่นคำร้องขอลา
+// POST /leaves
+// เฉพาะ user เท่านั้นที่ยื่นลาได้
+// เช็คว่าวันที่ซ้อนกับคำร้องเดิมไหม
 leaveRouter.post('/', requireRole('user'), async (c) => {
-  const user = c.get('user')
+  const payload = c.get('jwtPayload')
   const body = await c.req.json()
-
-  if (!body.leaveType || !body.startDate || !body.endDate || !body.reason) {
+  // body ต้องมี: leaveType, startDate, endDate, reason
+  // optional: delegateName
+  if (!body.leaveType || !body.startDate || !body.endDate || !body.reason)
     return c.json({ error: 'กรุณากรอกข้อมูลให้ครบ' }, 400)
-  }
-
   try {
-    const result = await LeaveService.createLeaveRequest(body, user.sub)
+    const result = await LeaveService.createLeaveRequest(body, payload.sub.toString())
     return c.json(result, 201)
   } catch (e: any) {
-    if (e.message === 'DATE_OVERLAP')
-      return c.json({ error: 'มีคำร้องที่ช่วงเวลานี้อยู่แล้ว' }, 409)
+    if (e.message === 'DATE_OVERLAP') return c.json({ error: 'มีคำร้องที่ช่วงเวลานี้อยู่แล้ว' }, 409)
     throw e
   }
 })
 
-// GET /leaves — user ดูของตัวเอง, admin/manager ดูทั้งหมด
+// GET /leaves
+// user → เห็นแค่การลาของตัวเอง
+// admin/manager → เห็นทั้งหมด
+// ?status=pending กรองเฉพาะรออนุมัติได้
 leaveRouter.get('/', async (c) => {
-  const user = c.get('user')
-  const status = c.req.query('status') // ?status=pending
-  const result = await LeaveService.getLeaveRequests(user.sub, user.role, status)
+  const payload = c.get('jwtPayload')
+  const status = c.req.query('status')
+  const result = await LeaveService.getLeaveRequests(payload.sub.toString(), payload.role, status)
   return c.json({ data: result })
 })
 
-// PATCH /leaves/:id/approve — manager/admin อนุมัติ
+// PATCH /leaves/:id/approve — อนุมัติ (เปลี่ยน status และบันทึกว่าใครเป็นคน review)
 leaveRouter.patch('/:id/approve', requireRole('admin', 'manager'), async (c) => {
-  const user = c.get('user')
+  const payload = c.get('jwtPayload')
   try {
-    const result = await LeaveService.approveLeave(c.req.param('id'), user.sub, user.role)
+    const result = await LeaveService.approveLeave(c.req.param('id'), payload.sub.toString(), payload.role)
     return c.json(result)
   } catch (e: any) {
-    if (e.message === 'NOT_FOUND')   return c.json({ error: 'ไม่พบคำร้อง' }, 404)
+    if (e.message === 'NOT_FOUND') return c.json({ error: 'ไม่พบคำร้อง' }, 404)
     if (e.message === 'NOT_PENDING') return c.json({ error: 'คำร้องนี้ถูกตัดสินแล้ว' }, 409)
     throw e
   }
 })
 
-// PATCH /leaves/:id/reject — manager/admin ปฏิเสธ
+// PATCH /leaves/:id/reject  — ปฏิเสธ (เปลี่ยน status และบันทึกว่าใครเป็นคน review)
 leaveRouter.patch('/:id/reject', requireRole('admin', 'manager'), async (c) => {
-  const user = c.get('user')
+  const payload = c.get('jwtPayload')
   try {
-    const result = await LeaveService.rejectLeave(c.req.param('id'), user.sub, user.role)
+    const result = await LeaveService.rejectLeave(c.req.param('id'), payload.sub.toString(), payload.role)
     return c.json(result)
   } catch (e: any) {
-    if (e.message === 'NOT_FOUND')   return c.json({ error: 'ไม่พบคำร้อง' }, 404)
+    if (e.message === 'NOT_FOUND') return c.json({ error: 'ไม่พบคำร้อง' }, 404)
     if (e.message === 'NOT_PENDING') return c.json({ error: 'คำร้องนี้ถูกตัดสินแล้ว' }, 409)
     throw e
   }

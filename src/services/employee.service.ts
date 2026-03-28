@@ -1,174 +1,137 @@
-import { db } from "../db/index";
-import { hashPassword } from "../lib/password";
-import { logEvent } from "./event-log.service";
+import { prisma } from '../lib/prisma.js'
+import { logEvent } from './event-log.service.js'
+import { hashPassword } from './user_service.js'
 
-// ─── GET /employees ─────────────────────────────────────────
-// scenario: HR เปิดหน้า dashboard ดูรายชื่อพนักงานทั้งหมด
-export const getEmployees = async (
-  actorRole: string,
-  actorDepartment: string | null,
-) => {
-  console.log("role:", actorRole, "department:", actorDepartment);
-  // manager เห็นเฉพาะแผนกตัวเอง, admin เห็นทั้งหมด
-  if (actorRole === "manager" && actorDepartment) {
-    const result = await db.query(
-      `SELECT id, employee_code, email, first_name, last_name,
-              department, role, status, created_at
-       FROM employees
-       WHERE department = $1
-       ORDER BY created_at DESC`,
-      [actorDepartment],
-    );
-    return result.rows;
-  }
+// getEmployees: ดึงรายชื่อพนักงาน
+export const getEmployees = async (actorRole: string, actorDepartmentId: number | null) => {
+  
+  // ถ้า role=manager จะกรองเฉพาะ department_id ตัวเอง
+  return prisma.employees.findMany({
+    where: actorRole === 'manager' && actorDepartmentId
+      ? { department_id: actorDepartmentId }
+      : {},
+    select: {
+      id: true,
+      employee_code: true,
+      email: true,
+      first_name: true,
+      last_name: true,
+      department: { select: { id: true, name: true } },
+      role: true,
+      status: true,
+      created_at: true,
+    },
+    orderBy: { created_at: 'desc' },
+  })
+}
 
-  const result = await db.query(
-    `SELECT id, employee_code, email, first_name, last_name,
-            department, role, status, created_at
-     FROM employees
-     ORDER BY created_at DESC`,
-  );
-  return result.rows;
-};
-
-// ─── GET /employees/:id ──────────────────────────────────────
-// scenario: HR คลิกดูรายละเอียดพนักงานคนนึง
+// getEmployeeById: ดึงข้อมูลพนักงานคนเดียว
 export const getEmployeeById = async (id: string) => {
-  const result = await db.query(
-    `SELECT id, employee_code, email, first_name, last_name,
-            department, role, status, created_at
-     FROM employees WHERE id = $1`,
-    [id],
-  );
-  return result.rows[0] ?? null;
-};
+  return prisma.employees.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      employee_code: true,
+      email: true,
+      first_name: true,
+      last_name: true,
+      department: { select: { id: true, name: true } },
+      role: true,
+      status: true,
+    },
+  })
+}
 
-// ─── POST /employees ─────────────────────────────────────────
-// scenario: HR กดปุ่ม "เพิ่มพนักงานใหม่" แล้วกรอกฟอร์ม
+// createEmployee: สร้างพนักงานใหม่
 export const createEmployee = async (
   data: {
-    email: string;
-    firstName: string;
-    lastName: string;
-    password: string;
-    department?: string;
-    role?: string;
-    employeeCode?: string;
+    email: string
+    firstName: string
+    lastName: string
+    password: string
+    departmentId?: number
+    role?: string
+    employeeCode?: string
   },
   actorId: string,
-  actorRole: string,
+  actorRole: string
 ) => {
-  // เช็คว่า email ซ้ำไหม
-  const existing = await db.query("SELECT id FROM employees WHERE email = $1", [
-    data.email,
-  ]);
-  if (existing.rows[0]) {
-    throw new Error("EMAIL_EXISTS");
-  }
+  // 1. เช็ค email ซ้ำ
+  const existing = await prisma.employees.findUnique({ where: { email: data.email } })
+  if (existing) throw new Error('EMAIL_EXISTS')
 
-  const hash = await hashPassword(data.password);
+  // 2. hash password
+  const hash = await hashPassword(data.password)
 
-  const result = await db.query(
-    `INSERT INTO employees 
-      (email, first_name, last_name, department, role, employee_code)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id, email, first_name, last_name, department, role, status`,
-    [
-      data.email,
-      data.firstName,
-      data.lastName,
-      data.department ?? null,
-      data.role ?? "user",
-      data.employeeCode ?? null,
-    ],
-  );
+  // 3. สร้าง employees row + employee_identities row พร้อมกัน
+  const employee = await prisma.employees.create({
+    data: {
+      email: data.email,
+      first_name: data.firstName,
+      last_name: data.lastName,
+      department_id: data.departmentId ?? null,
+      role: (data.role as any) ?? 'user',
+      employee_code: data.employeeCode ?? null,
+      employee_identities: {
+        create: { provider: 'local', password_hash: hash },
+      },
+    },
+    select: {
+      id: true, email: true, first_name: true, last_name: true,
+      department: { select: { id: true, name: true } },
+      role: true, status: true,
+    },
+  })
+  // 4. บันทึก event log
+  await logEvent({
+    actorId, actorRole, action: 'ADD_USER',
+    targetId: employee.id, targetType: 'employee',
+    detail: { email: data.email, role: data.role ?? 'user' },
+  })
 
-  const newEmployee = result.rows[0];
+  return employee
+}
 
-  // สร้าง identity สำหรับ local login
-  await db.query(
-    `INSERT INTO employee_identities (employee_id, provider, password_hash)
-     VALUES ($1, 'local', $2)`,
-    [newEmployee.id, hash],
-  );
+// disableEmployee: เปลี่ยน status เป็น disabled
+// เช็ค: มีอยู่ไหม, disabled แล้วหรือยัง, ห้าม disable admin
+export const disableEmployee = async (id: string, actorId: string, actorRole: string) => {
+  const emp = await prisma.employees.findUnique({ where: { id } })
+  if (!emp) throw new Error('NOT_FOUND')
+  if (emp.status === 'disabled') throw new Error('ALREADY_DISABLED')
+  if (emp.role === 'admin') throw new Error('CANNOT_DISABLE_ADMIN')
 
+  await prisma.employees.update({
+    where: { id },
+    data: { status: 'disabled', updated_at: new Date() },
+  })
   // บันทึก event log
-  await logEvent({
-    actorId,
-    actorRole,
-    action: "ADD_USER",
-    targetId: newEmployee.id,
-    targetType: "employee",
-    detail: { email: data.email, role: data.role ?? "user" },
-  });
+  await logEvent({ actorId, actorRole, action: 'DISABLE_USER', targetId: id, targetType: 'employee' })
+  return { message: 'Disabled successfully' }
+}
 
-  return newEmployee;
-};
-
-// ─── PATCH /employees/:id/disable ───────────────────────────
-// scenario: HR กดปุ่ม DISABLED ข้างชื่อพนักงานที่ลาออก
-export const disableEmployee = async (
-  id: string,
-  actorId: string,
-  actorRole: string,
-) => {
-  const emp = await db.query(
-    "SELECT id, status, role FROM employees WHERE id = $1",
-    [id],
-  );
-
-  if (!emp.rows[0]) throw new Error("NOT_FOUND");
-  if (emp.rows[0].status === "disabled") throw new Error("ALREADY_DISABLED");
-  if (emp.rows[0].role === "admin") throw new Error("CANNOT_DISABLE_ADMIN");
-
-  await db.query(
-    `UPDATE employees SET status = 'disabled', updated_at = NOW()
-     WHERE id = $1`,
-    [id],
-  );
-
-  await logEvent({
-    actorId,
-    actorRole,
-    action: "DISABLE_USER",
-    targetId: id,
-    targetType: "employee",
-  });
-
-  return { message: "Disabled successfully" };
-};
-
-// ─── PATCH /employees/:id/profile ───────────────────────────
-// scenario: พนักงานแก้ข้อมูลตัวเอง (ชื่อ, แผนก)
+// updateProfile: แก้ข้อมูลพนักงาน
+// ใช้ COALESCE — ถ้าไม่ส่งมาจะไม่อัปเดต field นั้น
 export const updateProfile = async (
   id: string,
-  data: { firstName?: string; lastName?: string; department?: string },
+  data: { firstName?: string; lastName?: string; departmentId?: number },
   actorId: string,
-  actorRole: string,
+  actorRole: string
 ) => {
-  const result = await db.query(
-    `UPDATE employees
-     SET first_name = COALESCE($1, first_name),
-         last_name  = COALESCE($2, last_name),
-         department = COALESCE($3, department),
-         updated_at = NOW()
-     WHERE id = $4
-     RETURNING id, email, first_name, last_name, department, role, status`,
-    [
-      data.firstName ?? null,
-      data.lastName ?? null,
-      data.department ?? null,
-      id,
-    ],
-  );
+  const result = await prisma.employees.update({
+    where: { id },
+    data: {
+      ...(data.firstName && { first_name: data.firstName }),
+      ...(data.lastName && { last_name: data.lastName }),
+      ...(data.departmentId && { department_id: data.departmentId }),
+      updated_at: new Date(),
+    },
+    select: {
+      id: true, email: true, first_name: true, last_name: true,
+      department: { select: { id: true, name: true } },
+      role: true, status: true,
+    },
+  })
 
-  await logEvent({
-    actorId,
-    actorRole,
-    action: "UPDATE_PROFILE",
-    targetId: id,
-    targetType: "employee",
-  });
-
-  return result.rows[0];
-};
+  await logEvent({ actorId, actorRole, action: 'UPDATE_PROFILE', targetId: id, targetType: 'employee' })
+  return result
+}
