@@ -84,6 +84,7 @@ export async function loginWithEmailPassword(email: string, password: string) {
     email: employee.email,
     first_name: employee.first_name,
     last_name: employee.last_name,
+    department_id: employee.department_id,  
     role: employee.role,
   }
 }
@@ -127,6 +128,7 @@ export async function loginWithGoogle(googleUserId: string, email: string) {
     email: employee.email,
     first_name: employee.first_name,
     last_name: employee.last_name,
+    department_id: employee.department_id,
     role: employee.role,
   }
 }
