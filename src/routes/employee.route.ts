@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import type { AuthVariables } from '../middleware/auth.js'
 import * as EmployeeService from '../services/employee.service.js'
-import { validatePassword } from '../services/user_service.js'
+import { validatePassword } from '../services/user.service.js'
 
 const employeeRouter = new Hono<{ Variables: AuthVariables }>()
 

@@ -2,10 +2,11 @@ import 'dotenv/config'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import auth from './routes/auth.js'
+import auth from './routes/auth.route.js'
 import employeeRouter from './routes/employee.route.js'
 import leaveRouter from './routes/leave.route.js'
 import eventLogRouter from './routes/event-log.route.js'
+import { prisma } from './lib/prisma.js'
 
 const app = new Hono()
 

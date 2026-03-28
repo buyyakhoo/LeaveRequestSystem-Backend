@@ -1,8 +1,8 @@
 import crypto from 'node:crypto'
 import { Hono } from 'hono'
 import { sign } from 'hono/jwt'
-import { loginWithEmailPassword, loginWithGoogle } from '../services/user_service.js'
-import { buildGoogleAuthUrl, exchangeCodeForTokens, getGoogleUserInfo } from '../services/google_auth_service.js'
+import { loginWithEmailPassword, loginWithGoogle } from '../services/user.service.js'
+import { buildGoogleAuthUrl, exchangeCodeForTokens, getGoogleUserInfo } from '../services/google_auth.service.js'
 import { prisma } from '../lib/prisma.js'
 import { requireAuth } from '../middleware/auth.js'
 

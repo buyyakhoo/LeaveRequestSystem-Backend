@@ -62,7 +62,7 @@ export const getLeaveRequests = async (
     where,
     include: {
       employee: {
-        select: { first_name: true, last_name: true, department: true },
+        select: { first_name: true, last_name: true, department_id: true },
       },
     },
     orderBy: { created_at: 'desc' },

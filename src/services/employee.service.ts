@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma.js'
 import { logEvent } from './event-log.service.js'
-import { hashPassword } from './user_service.js'
+import { hashPassword } from './user.service.js'
 
 // getEmployees: ดึงรายชื่อพนักงาน
 export const getEmployees = async (actorRole: string, actorDepartmentId: number | null) => {
