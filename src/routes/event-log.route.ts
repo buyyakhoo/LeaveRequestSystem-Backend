@@ -14,7 +14,9 @@ eventLogRouter.use('*', requireAuth) //login ก่อน
 eventLogRouter.get('/', requireRole('admin', 'manager'), async (c) => {
   const payload = c.get('jwtPayload')
   const limit = Number(c.req.query('limit') ?? 50)
-  const result = await getEventLogs(payload.sub.toString(), payload.role, limit)
+  const fromParam = c.req.query('from')
+  const from = fromParam ? new Date(fromParam) : undefined
+  const result = await getEventLogs(payload.sub.toString(), payload.role, limit, from)
   return c.json({ data: result })
 })
 

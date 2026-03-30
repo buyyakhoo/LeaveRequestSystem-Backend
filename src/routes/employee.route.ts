@@ -44,7 +44,8 @@ employeeRouter.post('/', requireRole('admin', 'manager'), async (c) => {
     const emp = await EmployeeService.createEmployee(body, payload.sub.toString(), payload.role)
     return c.json(emp, 201)
   } catch (e: any) {
-    if (e.message === 'EMAIL_EXISTS') return c.json({ error: 'Email นี้มีในระบบแล้ว' }, 409)
+    if (e.message === 'EMAIL_EXISTS') return c.json({ error: 'อีเมลนี้มีในระบบแล้ว' }, 409)
+    if (e.message === 'EMPLOYEE_CODE_EXISTS') return c.json({ error: 'รหัสพนักงานนี้มีในระบบแล้ว' }, 409)
     throw e
   }
 })

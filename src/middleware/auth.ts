@@ -5,6 +5,7 @@ type JwtPayload = {
   sub: number
   email: string
   role: string
+  department_id?: number | null
   exp: number
 }
 

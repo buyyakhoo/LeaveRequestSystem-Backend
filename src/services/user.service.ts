@@ -54,9 +54,8 @@ export async function loginWithEmailPassword(email: string, password: string) {
   const employee = await prisma.employees.findUnique({
     where: { email },
     include: {
-      employee_identities: {
-        where: { provider: 'local' },
-      },
+      employee_identities: { where: { provider: 'local' } },
+      departments: { select: { id: true, name: true } },
     },
   })
 
@@ -84,7 +83,8 @@ export async function loginWithEmailPassword(email: string, password: string) {
     email: employee.email,
     first_name: employee.first_name,
     last_name: employee.last_name,
-    department_id: employee.department_id,  
+    department_id: employee.department_id,
+    department_name: employee.departments?.name ?? null,
     role: employee.role,
   }
 }
@@ -94,7 +94,10 @@ export async function loginWithEmailPassword(email: string, password: string) {
 export async function loginWithGoogle(googleUserId: string, email: string) {
   const employee = await prisma.employees.findUnique({
     where: { email },
-    include: { employee_identities: true },
+    include: {
+      employee_identities: true,
+      departments: { select: { id: true, name: true } },
+    },
   })
 
   // ไม่เจอ employee → email นี้ไม่ใช่ employee ของบริษัท
@@ -129,6 +132,7 @@ export async function loginWithGoogle(googleUserId: string, email: string) {
     first_name: employee.first_name,
     last_name: employee.last_name,
     department_id: employee.department_id,
+    department_name: employee.departments?.name ?? null,
     role: employee.role,
   }
 }

@@ -15,6 +15,11 @@ export const createLeaveRequest = async (
   const start = new Date(data.startDate)
   const end = new Date(data.endDate)
 
+  // เช็คว่าวันเริ่มลาต้องไม่ย้อนหลัง
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  if (start < todayStart) throw new Error('DATE_IN_PAST')
+
   // เช็ควันที่ซ้อนกับคำร้องที่ pending/approved อยู่
   const overlap = await prisma.leave_requests.findFirst({
     where: {
@@ -62,40 +67,85 @@ export const getLeaveRequests = async (
     where,
     include: {
       employee: {
-        select: { first_name: true, last_name: true, department_id: true },
+        select: { first_name: true, last_name: true, department_id: true, email: true },
       },
     },
     orderBy: { created_at: 'desc' },
   })
 }
 
+// getLeaveSummary: สรุปสถิติการลาของ user ที่ login อยู่
+export const getLeaveSummary = async (actorId: string) => {
+  const startOfYear = new Date(new Date().getFullYear(), 0, 1)
+
+  const leaves = await prisma.leave_requests.findMany({
+    where: {
+      employee_id: actorId,
+      start_date: { gte: startOfYear },
+    },
+    select: { leave_type: true, start_date: true, end_date: true, status: true },
+  })
+
+  const pendingCount = leaves.filter(l => l.status === 'pending').length
+
+  const approvedLeaves = leaves.filter(l => l.status === 'approved')
+
+  const calcDays = (l: { start_date: Date; end_date: Date }) =>
+    Math.round((l.end_date.getTime() - l.start_date.getTime()) / (1000 * 60 * 60 * 24)) + 1
+
+  const totalDaysThisYear = approvedLeaves.reduce((sum, l) => sum + calcDays(l), 0)
+
+  const byType: Record<string, number> = {}
+  for (const l of approvedLeaves) {
+    byType[l.leave_type] = (byType[l.leave_type] ?? 0) + calcDays(l)
+  }
+
+  return { pending_count: pendingCount, total_days_this_year: totalDaysThisYear, by_type: byType }
+}
+
 // approveLeave + rejectLeave
 // เช็คว่า status ยัง pending อยู่ไหม
 // update status + reviewed_by + reviewed_at
-export const approveLeave = async (leaveId: string, actorId: string, actorRole: string) => {
-  const leave = await prisma.leave_requests.findUnique({ where: { id: leaveId } })
+export const approveLeave = async (leaveId: string, actorId: string, actorRole: string, actorDepartmentId?: number | null) => {
+  const leave = await prisma.leave_requests.findUnique({
+    where: { id: leaveId },
+    include: { employee: { select: { department_id: true, email: true } } },
+  })
   if (!leave) throw new Error('NOT_FOUND')
   if (leave.status !== 'pending') throw new Error('NOT_PENDING')
+
+  if (actorRole === 'manager') {
+    if (!actorDepartmentId || leave.employee.department_id !== actorDepartmentId)
+      throw new Error('FORBIDDEN')
+  }
 
   const result = await prisma.leave_requests.update({
     where: { id: leaveId },
     data: { status: 'approved', reviewed_by: actorId, reviewed_at: new Date() },
   })
 
-  await logEvent({ actorId, actorRole, action: 'LEAVE_APPROVE', targetId: leaveId, targetType: 'leave_request' })
+  await logEvent({ actorId, actorRole, action: 'LEAVE_APPROVE', targetId: leaveId, targetType: 'leave_request', detail: { email: leave.employee.email } })
   return result
 }
 
-export const rejectLeave = async (leaveId: string, actorId: string, actorRole: string) => {
-  const leave = await prisma.leave_requests.findUnique({ where: { id: leaveId } })
+export const rejectLeave = async (leaveId: string, actorId: string, actorRole: string, actorDepartmentId?: number | null) => {
+  const leave = await prisma.leave_requests.findUnique({
+    where: { id: leaveId },
+    include: { employee: { select: { department_id: true, email: true } } },
+  })
   if (!leave) throw new Error('NOT_FOUND')
   if (leave.status !== 'pending') throw new Error('NOT_PENDING')
+
+  if (actorRole === 'manager') {
+    if (!actorDepartmentId || leave.employee.department_id !== actorDepartmentId)
+      throw new Error('FORBIDDEN')
+  }
 
   const result = await prisma.leave_requests.update({
     where: { id: leaveId },
     data: { status: 'rejected', reviewed_by: actorId, reviewed_at: new Date() },
   })
 
-  await logEvent({ actorId, actorRole, action: 'LEAVE_REJECT', targetId: leaveId, targetType: 'leave_request' })
+  await logEvent({ actorId, actorRole, action: 'LEAVE_REJECT', targetId: leaveId, targetType: 'leave_request', detail: { email: leave.employee.email } })
   return result
 }

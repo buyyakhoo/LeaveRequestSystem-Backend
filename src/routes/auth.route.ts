@@ -8,6 +8,21 @@ import { requireAuth } from '../middleware/auth.js'
 
 const auth = new Hono()
 
+// ─── One-time exchange code store ─────────────────────────────────────────────
+// code → { token, user, exp }  (TTL 60 seconds, single-use)
+interface ExchangeEntry {
+  token: string
+  user: object
+  exp: number
+}
+const exchangeStore = new Map<string, ExchangeEntry>()
+
+function storeExchangeCode(token: string, user: object): string {
+  const code = crypto.randomBytes(24).toString('hex')
+  exchangeStore.set(code, { token, user, exp: Date.now() + 60_000 })
+  return code
+}
+
 // ─── Email / Password Login ───────────────────────────────────────────────────
 
 auth.post('/login', async (c) => {
@@ -26,6 +41,11 @@ auth.post('/login', async (c) => {
         sub: user.id,
         email: user.email,
         role: user.role,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        employee_code: user.employee_code,
+        department_id: user.department_id,
+        department_name: user.department_name,
         exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8, // 8 hours
       },
       process.env.JWT_SECRET!
@@ -60,6 +80,7 @@ auth.get('/me', requireAuth, async (c) => {
       first_name: true,
       last_name: true,
       role: true,
+      departments: { select: { id: true, name: true } },
     },
   })
 
@@ -134,7 +155,11 @@ auth.get('/google/callback', async (c) => {
         sub: user.id,
         email: user.email,
         role: user.role,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        employee_code: user.employee_code,
         department_id: user.department_id,
+        department_name: user.department_name,
         exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8,
       },
       process.env.JWT_SECRET!
@@ -143,9 +168,9 @@ auth.get('/google/callback', async (c) => {
     // ล้าง state cookie
     c.header('Set-Cookie', 'oauth_state=; HttpOnly; Max-Age=0; Path=/')
 
-    // Redirect กลับ frontend พร้อม token
-    // Frontend จะรับ token แล้วเก็บใน localStorage/memory ต่อไป
-    return c.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`)
+    // เก็บ token ไว้ใน memory แล้ว redirect ด้วย one-time code แทน
+    const exchangeCode = storeExchangeCode(token, user)
+    return c.redirect(`${process.env.FRONTEND_URL}/auth/callback?code=${exchangeCode}`)
   } catch (err) {
     const errorMap: Record<string, string> = {
       NOT_AN_EMPLOYEE: 'not_employee',
@@ -156,6 +181,26 @@ auth.get('/google/callback', async (c) => {
     if (!errorCode) console.error(err)
     return c.redirect(`${process.env.FRONTEND_URL}/login?error=${errorCode ?? 'server_error'}`)
   }
+})
+
+// ─── Exchange one-time code → JWT ────────────────────────────────────────────
+auth.post('/exchange', async (c) => {
+  const body = await c.req.json<{ code?: string }>()
+  const { code } = body
+
+  if (!code) return c.json({ message: 'code is required' }, 400)
+
+  const entry = exchangeStore.get(code)
+  if (!entry) return c.json({ message: 'Invalid or expired code' }, 401)
+
+  // Single-use: delete immediately
+  exchangeStore.delete(code)
+
+  if (Date.now() > entry.exp) {
+    return c.json({ message: 'Code has expired' }, 401)
+  }
+
+  return c.json({ token: entry.token, user: entry.user })
 })
 
 export default auth

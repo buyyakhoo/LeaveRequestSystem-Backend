@@ -28,13 +28,18 @@ export const logEvent = async (params: {
 // getEventLogs: ดึง log
 // admin → ทั้งหมด
 // manager → เฉพาะของตัวเอง
-export const getEventLogs = async (actorId: string, actorRole: string, limit = 50) => {
-  return prisma.event_logs.findMany({
-    where: actorRole === 'manager' ? { actor_id: actorId } : {},
+export const getEventLogs = async (actorId: string, actorRole: string, limit = 50, from?: Date) => {
+  const where: Record<string, unknown> = actorRole === 'manager' ? { actor_id: actorId } : {}
+  if (from) where.timestamp = { gte: from }
+
+  const logs = await prisma.event_logs.findMany({
+    where,
     include: {
       actor: { select: { email: true } },
     },
     orderBy: { timestamp: 'desc' },
     take: limit,
   })
+  // BigInt ไม่ผ่าน JSON.stringify — แปลงเป็น string ก่อน return
+  return logs.map(log => ({ ...log, id: log.id.toString() }))
 }

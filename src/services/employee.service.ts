@@ -16,7 +16,7 @@ export const getEmployees = async (actorRole: string, actorDepartmentId: number 
       email: true,
       first_name: true,
       last_name: true,
-      department: { select: { id: true, name: true } },
+      departments: { select: { id: true, name: true } },
       role: true,
       status: true,
       created_at: true,
@@ -35,7 +35,7 @@ export const getEmployeeById = async (id: string) => {
       email: true,
       first_name: true,
       last_name: true,
-      department: { select: { id: true, name: true } },
+      departments: { select: { id: true, name: true } },
       role: true,
       status: true,
     },
@@ -56,9 +56,14 @@ export const createEmployee = async (
   actorId: string,
   actorRole: string
 ) => {
-  // 1. เช็ค email ซ้ำ
+  // 1. เช็ค email และ employee_code ซ้ำ
   const existing = await prisma.employees.findUnique({ where: { email: data.email } })
   if (existing) throw new Error('EMAIL_EXISTS')
+
+  if (data.employeeCode) {
+    const existingCode = await prisma.employees.findUnique({ where: { employee_code: data.employeeCode } })
+    if (existingCode) throw new Error('EMPLOYEE_CODE_EXISTS')
+  }
 
   // 2. hash password
   const hash = await hashPassword(data.password)
@@ -78,7 +83,7 @@ export const createEmployee = async (
     },
     select: {
       id: true, email: true, first_name: true, last_name: true,
-      department: { select: { id: true, name: true } },
+      departments: { select: { id: true, name: true } },
       role: true, status: true,
     },
   })
@@ -127,7 +132,7 @@ export const updateProfile = async (
     },
     select: {
       id: true, email: true, first_name: true, last_name: true,
-      department: { select: { id: true, name: true } },
+      departments: { select: { id: true, name: true } },
       role: true, status: true,
     },
   })

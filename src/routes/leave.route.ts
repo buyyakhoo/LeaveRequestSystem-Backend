@@ -21,9 +21,18 @@ leaveRouter.post('/', requireRole('user'), async (c) => {
     const result = await LeaveService.createLeaveRequest(body, payload.sub.toString())
     return c.json(result, 201)
   } catch (e: any) {
+    if (e.message === 'DATE_IN_PAST') return c.json({ error: 'ไม่สามารถยื่นลาย้อนหลังได้' }, 400)
     if (e.message === 'DATE_OVERLAP') return c.json({ error: 'มีคำร้องที่ช่วงเวลานี้อยู่แล้ว' }, 409)
     throw e
   }
+})
+
+// GET /leaves/summary
+// สรุปสถิติการลาของ user ที่ login อยู่ในปีปัจจุบัน
+leaveRouter.get('/summary', async (c) => {
+  const payload = c.get('jwtPayload')
+  const result = await LeaveService.getLeaveSummary(payload.sub.toString())
+  return c.json(result)
 })
 
 // GET /leaves
@@ -41,11 +50,12 @@ leaveRouter.get('/', async (c) => {
 leaveRouter.patch('/:id/approve', requireRole('admin', 'manager'), async (c) => {
   const payload = c.get('jwtPayload')
   try {
-    const result = await LeaveService.approveLeave(c.req.param('id'), payload.sub.toString(), payload.role)
+    const result = await LeaveService.approveLeave(c.req.param('id'), payload.sub.toString(), payload.role, payload.department_id)
     return c.json(result)
   } catch (e: any) {
     if (e.message === 'NOT_FOUND') return c.json({ error: 'ไม่พบคำร้อง' }, 404)
     if (e.message === 'NOT_PENDING') return c.json({ error: 'คำร้องนี้ถูกตัดสินแล้ว' }, 409)
+    if (e.message === 'FORBIDDEN') return c.json({ error: 'ไม่มีสิทธิ์จัดการคำร้องของแผนกอื่น' }, 403)
     throw e
   }
 })
@@ -54,11 +64,12 @@ leaveRouter.patch('/:id/approve', requireRole('admin', 'manager'), async (c) => 
 leaveRouter.patch('/:id/reject', requireRole('admin', 'manager'), async (c) => {
   const payload = c.get('jwtPayload')
   try {
-    const result = await LeaveService.rejectLeave(c.req.param('id'), payload.sub.toString(), payload.role)
+    const result = await LeaveService.rejectLeave(c.req.param('id'), payload.sub.toString(), payload.role, payload.department_id)
     return c.json(result)
   } catch (e: any) {
     if (e.message === 'NOT_FOUND') return c.json({ error: 'ไม่พบคำร้อง' }, 404)
     if (e.message === 'NOT_PENDING') return c.json({ error: 'คำร้องนี้ถูกตัดสินแล้ว' }, 409)
+    if (e.message === 'FORBIDDEN') return c.json({ error: 'ไม่มีสิทธิ์จัดการคำร้องของแผนกอื่น' }, 403)
     throw e
   }
 })
