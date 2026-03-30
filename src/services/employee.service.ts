@@ -8,7 +8,7 @@ export const getEmployees = async (actorRole: string, actorDepartmentId: number 
   // ถ้า role=manager จะกรองเฉพาะ department_id ตัวเอง
   return prisma.employees.findMany({
     where: actorRole === 'manager' && actorDepartmentId
-      ? { department_id: actorDepartmentId }
+      ? { department_id: actorDepartmentId, role: 'user' }
       : {},
     select: {
       id: true,
@@ -114,20 +114,82 @@ export const disableEmployee = async (id: string, actorId: string, actorRole: st
   return { message: 'Disabled successfully' }
 }
 
+// promoteToManager: เลื่อนยศ user → manager (department ไม่เปลี่ยน)
+export const promoteToManager = async (id: string, actorId: string, actorRole: string) => {
+  const emp = await prisma.employees.findUnique({ where: { id } })
+  if (!emp) throw new Error('NOT_FOUND')
+  if (emp.status === 'disabled') throw new Error('EMPLOYEE_DISABLED')
+  if (emp.role !== 'user') throw new Error('NOT_A_USER')
+
+  const result = await prisma.employees.update({
+    where: { id },
+    data: { role: 'manager', updated_at: new Date() },
+    select: {
+      id: true, email: true, first_name: true, last_name: true,
+      role: true, departments: { select: { id: true, name: true } },
+    },
+  })
+
+  await logEvent({
+    actorId, actorRole, action: 'PROMOTE_USER',
+    targetId: id, targetType: 'employee',
+    detail: { email: emp.email },
+  })
+
+  return result
+}
+
+// demoteToUser: ลดระดับ manager → user (department ไม่เปลี่ยน)
+export const demoteToUser = async (id: string, actorId: string, actorRole: string) => {
+  const emp = await prisma.employees.findUnique({ where: { id } })
+  if (!emp) throw new Error('NOT_FOUND')
+  if (emp.status === 'disabled') throw new Error('EMPLOYEE_DISABLED')
+  if (emp.role !== 'manager') throw new Error('NOT_A_MANAGER')
+
+  const result = await prisma.employees.update({
+    where: { id },
+    data: { role: 'user', updated_at: new Date() },
+    select: {
+      id: true, email: true, first_name: true, last_name: true,
+      role: true, departments: { select: { id: true, name: true } },
+    },
+  })
+
+  await logEvent({
+    actorId, actorRole, action: 'DEMOTE_USER',
+    targetId: id, targetType: 'employee',
+    detail: { email: emp.email },
+  })
+
+  return result
+}
+
 // updateProfile: แก้ข้อมูลพนักงาน
 // ใช้ COALESCE — ถ้าไม่ส่งมาจะไม่อัปเดต field นั้น
 export const updateProfile = async (
   id: string,
-  data: { firstName?: string; lastName?: string; departmentId?: number },
+  data: { firstName?: string; lastName?: string; departmentId?: number; employeeCode?: string },
   actorId: string,
   actorRole: string
 ) => {
+  // employeeCode: ตั้งได้เฉพาะตอน NULL เท่านั้น
+  let employeeCodeUpdate: { employee_code: string } | undefined
+  if (data.employeeCode) {
+    const current = await prisma.employees.findUnique({ where: { id }, select: { employee_code: true } })
+    if (!current) throw new Error('NOT_FOUND')
+    if (current.employee_code !== null) throw new Error('EMPLOYEE_CODE_ALREADY_SET')
+    const dup = await prisma.employees.findUnique({ where: { employee_code: data.employeeCode } })
+    if (dup) throw new Error('EMPLOYEE_CODE_EXISTS')
+    employeeCodeUpdate = { employee_code: data.employeeCode }
+  }
+
   const result = await prisma.employees.update({
     where: { id },
     data: {
       ...(data.firstName && { first_name: data.firstName }),
       ...(data.lastName && { last_name: data.lastName }),
       ...(data.departmentId && { department_id: data.departmentId }),
+      ...employeeCodeUpdate,
       updated_at: new Date(),
     },
     select: {

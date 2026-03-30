@@ -1,3 +1,4 @@
+import { prisma } from '../lib/prisma.js'
 import { verify } from 'hono/jwt'
 import { createMiddleware } from 'hono/factory'
 
@@ -24,6 +25,19 @@ export const requireAuth = createMiddleware<{ Variables: AuthVariables }>(async 
 
   try {
     const payload = await verify(token, process.env.JWT_SECRET!, 'HS256') as JwtPayload
+
+    const freshUser = await prisma.employees.findUnique({
+      where: { id: String(payload.sub) },
+      select: { role: true, status: true, department_id: true }
+    })
+
+    if (!freshUser || freshUser.status !== 'active') {
+      return c.json({ message: 'Account disabled or not found' }, 401)
+    }
+
+    payload.role = freshUser.role ?? 'user'
+    payload.department_id = freshUser.department_id
+
     c.set('jwtPayload', payload)
     await next()
   } catch {
