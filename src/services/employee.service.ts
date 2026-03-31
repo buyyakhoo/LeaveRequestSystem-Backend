@@ -109,8 +109,15 @@ export const disableEmployee = async (id: string, actorId: string, actorRole: st
     where: { id },
     data: { status: 'disabled', updated_at: new Date() },
   })
-  // บันทึก event log
-  await logEvent({ actorId, actorRole, action: 'DISABLE_USER', targetId: id, targetType: 'employee' })
+
+  await logEvent({ 
+    actorId, 
+    actorRole, 
+    action: 'DISABLE_USER', 
+    targetId: id, 
+    targetType: 'employee',
+    detail: { email: emp.email }
+  })
   return { message: 'Disabled successfully' }
 }
 
@@ -199,6 +206,13 @@ export const updateProfile = async (
     },
   })
 
-  await logEvent({ actorId, actorRole, action: 'UPDATE_PROFILE', targetId: id, targetType: 'employee' })
+  await logEvent({ 
+    actorId, 
+    actorRole, 
+    action: 'UPDATE_PROFILE', 
+    targetId: id,
+    targetType: 'employee',
+    detail: { email: result.email }
+  })
   return result
 }

@@ -93,18 +93,18 @@ employeeRouter.patch('/:id/promote', requireRole('admin'), async (c) => {
 // PATCH /employees/:id/disable
 // เปลี่ยน status เป็น disabled (ห้าม delete)
 // manager: disable ได้เฉพาะพนักงานในแผนกตัวเอง
-employeeRouter.patch('/:id/disable', requireRole('admin', 'manager'), async (c) => {
+employeeRouter.patch('/:id/disable', requireRole('manager'), async (c) => {
   const payload = c.get('jwtPayload')
-  if (payload.role === 'manager') {
-    const target = await EmployeeService.getEmployeeById(c.req.param('id'))
-    if (!target) return c.json({ error: 'ไม่พบพนักงาน' }, 404)
-    if (target.departments?.id !== (payload as any).department_id)
-      return c.json({ error: 'Forbidden: พนักงานนี้ไม่ได้อยู่ในแผนกของคุณ' }, 403)
 
-    if (target.role !== 'user') {
-      return c.json({ error: 'Forbidden: HR ระงับบัญชีได้เฉพาะพนักงานทั่วไป (User) เท่านั้น' }, 403)
-    }
+  const target = await EmployeeService.getEmployeeById(c.req.param('id'))
+  if (!target) return c.json({ error: 'ไม่พบพนักงาน' }, 404)
+  if (target.departments?.id !== (payload as any).department_id)
+    return c.json({ error: 'Forbidden: พนักงานนี้ไม่ได้อยู่ในแผนกของคุณ' }, 403)
+
+  if (target.role !== 'user') {
+    return c.json({ error: 'Forbidden: HR ระงับบัญชีได้เฉพาะพนักงานทั่วไป (User) เท่านั้น' }, 403)
   }
+  
   try {
     const result = await EmployeeService.disableEmployee(c.req.param('id'), payload.sub.toString(), payload.role)
     return c.json(result)
