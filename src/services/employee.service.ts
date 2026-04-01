@@ -179,11 +179,12 @@ export const updateProfile = async (
   actorId: string,
   actorRole: string
 ) => {
+  const current = await prisma.employees.findUnique({ where: { id }, select: { employee_code: true, status: true } })
+  if (!current) throw new Error('NOT_FOUND')
+  if (current.status === 'disabled') throw new Error('EMPLOYEE_DISABLED')
   // employeeCode: ตั้งได้เฉพาะตอน NULL เท่านั้น
   let employeeCodeUpdate: { employee_code: string } | undefined
   if (data.employeeCode) {
-    const current = await prisma.employees.findUnique({ where: { id }, select: { employee_code: true } })
-    if (!current) throw new Error('NOT_FOUND')
     if (current.employee_code !== null) throw new Error('EMPLOYEE_CODE_ALREADY_SET')
     const dup = await prisma.employees.findUnique({ where: { employee_code: data.employeeCode } })
     if (dup) throw new Error('EMPLOYEE_CODE_EXISTS')
@@ -206,10 +207,10 @@ export const updateProfile = async (
     },
   })
 
-  await logEvent({ 
-    actorId, 
-    actorRole, 
-    action: 'UPDATE_PROFILE', 
+  await logEvent({
+    actorId,
+    actorRole,
+    action: 'UPDATE_PROFILE',
     targetId: id,
     targetType: 'employee',
     detail: { email: result.email }

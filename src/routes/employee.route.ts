@@ -159,6 +159,7 @@ employeeRouter.patch('/:id/profile', async (c) => {
     if (e.message === 'NOT_FOUND') return c.json({ error: 'ไม่พบพนักงาน' }, 404)
     if (e.message === 'EMPLOYEE_CODE_ALREADY_SET') return c.json({ error: 'รหัสพนักงานถูกตั้งไว้แล้ว ไม่สามารถแก้ไขได้' }, 409)
     if (e.message === 'EMPLOYEE_CODE_EXISTS') return c.json({ error: 'รหัสพนักงานนี้มีในระบบแล้ว' }, 409)
+    if (e.message === 'EMPLOYEE_DISABLED') return c.json({ error: 'ไม่สามารถแก้ไขข้อมูลพนักงานที่ถูกระงับได้' }, 409)
     throw e
   }
 })
