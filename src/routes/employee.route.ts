@@ -18,6 +18,14 @@ employeeRouter.get('/', requireRole('admin', 'manager'), async (c) => {
   return c.json({ data: employees })
 })
 
+// GET /employees/me
+employeeRouter.get('/me', async (c) => {
+  const payload = c.get('jwtPayload')
+  const emp = await EmployeeService.getEmployeeById(payload.sub.toString())
+  if (!emp) return c.json({ error: 'Not found' }, 404)
+  return c.json(emp)
+})
+
 // GET /employees/:id
 // ดูรายละเอียดพนักงานคนเดียว
 // manager: เห็นได้เฉพาะพนักงานในแผนกตัวเอง
