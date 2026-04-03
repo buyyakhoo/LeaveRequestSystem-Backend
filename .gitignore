@@ -8,6 +8,8 @@
 .idea/usage.statistics.xml
 .idea/shelf
 .claudeignore
+dist/
+coverage/
 
 # deps
 node_modules/
