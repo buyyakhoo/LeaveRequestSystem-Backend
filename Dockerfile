@@ -9,6 +9,7 @@ WORKDIR /app
 COPY src/ src/
 COPY tsconfig.json .
 COPY prisma/ prisma/
+RUN npm install -g copyfiles
 RUN npm run build
 
 FROM node:lts AS final
