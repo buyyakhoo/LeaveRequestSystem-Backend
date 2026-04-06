@@ -5,8 +5,17 @@ import { loginWithEmailPassword, loginWithGoogle } from '../services/user.servic
 import { buildGoogleAuthUrl, exchangeCodeForTokens, getGoogleUserInfo } from '../services/google_auth.service.js'
 import { prisma } from '../lib/prisma.js'
 import { requireAuth } from '../middleware/auth.js'
+import { rateLimiter } from 'hono-rate-limiter'
 
 const auth = new Hono()
+
+const loginRateLimiter = rateLimiter({
+  windowMs: 15 * 60 * 1000, // 15 นาที
+  limit: 10, // สูงสุด 10 ครั้งใน 15 นาที
+  keyGenerator: (c) =>
+    c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? "unknown",
+  message: { message: "Too many login attempts, please try again later" },
+});
 
 // One-time exchange code store 
 // TTL 60 seconds, single-use
@@ -24,7 +33,7 @@ function storeExchangeCode(token: string, user: object): string {
 }
 
 // Email / Password Login
-auth.post('/login', async (c) => {
+auth.post('/login', loginRateLimiter, async (c) => {
   const body = await c.req.json<{ email?: string; password?: string }>()
   const { email, password } = body
 
@@ -91,7 +100,7 @@ auth.get('/me', requireAuth, async (c) => {
 
 
 // Step 1: Redirect ไปหา Google consent screen
-//   GET /auth/google
+// GET /auth/google
 auth.get('/google', (c) => {
   // สร้าง state แบบ random เพื่อป้องกัน CSRF
   // state จะถูกเก็บใน httpOnly cookie แล้วนำมาเทียบกับ state ที่ Google ส่งกลับมา
@@ -108,7 +117,7 @@ auth.get('/google', (c) => {
 })
 
 // Step 2: Google redirect กลับมาพร้อม authorization code
-//   GET /auth/google/callback?code=xxx&state=xxx
+// GET /auth/google/callback?code=xxx&state=xxx
 auth.get('/google/callback', async (c) => {
   const { code, state, error } = c.req.query()
 
