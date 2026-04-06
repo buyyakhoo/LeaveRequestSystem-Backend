@@ -1,7 +1,6 @@
 import { prisma } from '../lib/prisma.js'
 import { logEvent } from './event-log.service.js'
 
-// createLeaveRequest: สร้างคำร้องขอลา
 export const createLeaveRequest = async (
   data: {
     leaveType: string
@@ -15,12 +14,10 @@ export const createLeaveRequest = async (
   const start = new Date(data.startDate)
   const end = new Date(data.endDate)
 
-  // เช็คว่าวันเริ่มลาต้องไม่ย้อนหลัง
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
   if (start < todayStart) throw new Error('DATE_IN_PAST')
 
-  // เช็ควันที่ซ้อนกับคำร้องที่ pending/approved อยู่
   const overlap = await prisma.leave_requests.findFirst({
     where: {
       employee_id: actorId,
@@ -42,7 +39,6 @@ export const createLeaveRequest = async (
     },
   })
 
-  // บันทึก event log
   await logEvent({
     actorId, actorRole: 'user', action: 'LEAVE_REQUEST',
     targetId: result.id, targetType: 'leave_request',
@@ -51,16 +47,13 @@ export const createLeaveRequest = async (
 
   return result
 }
-// getLeaveRequests: ดึงคำร้องการลา
+
 export const getLeaveRequests = async (
   actorId: string,
   actorRole: string,
   status?: string,
   actorDepartmentId?: number | null
 ) => {
-  // user → WHERE employee_id = ตัวเอง
-  // manager → WHERE employee.department_id = แผนกตัวเอง
-  // admin → เห็นทั้งหมด
   const where = {
     ...(actorRole === 'user' && { employee_id: actorId }),
     ...(actorRole === 'manager' && actorDepartmentId && {
@@ -80,7 +73,6 @@ export const getLeaveRequests = async (
   })
 }
 
-// getLeaveSummary: สรุปสถิติการลาของ user ที่ login อยู่
 export const getLeaveSummary = async (actorId: string) => {
   const startOfYear = new Date(new Date().getFullYear(), 0, 1)
 
@@ -109,9 +101,6 @@ export const getLeaveSummary = async (actorId: string) => {
   return { pending_count: pendingCount, total_days_this_year: totalDaysThisYear, by_type: byType }
 }
 
-// approveLeave + rejectLeave
-// เช็คว่า status ยัง pending อยู่ไหม
-// update status + reviewed_by + reviewed_at
 export const approveLeave = async (leaveId: string, actorId: string, actorRole: string, actorDepartmentId?: number | null) => {
   const leave = await prisma.leave_requests.findUnique({
     where: { id: leaveId },

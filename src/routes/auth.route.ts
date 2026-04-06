@@ -8,8 +8,8 @@ import { requireAuth } from '../middleware/auth.js'
 
 const auth = new Hono()
 
-// ─── One-time exchange code store ─────────────────────────────────────────────
-// code → { token, user, exp }  (TTL 60 seconds, single-use)
+// One-time exchange code store 
+// TTL 60 seconds, single-use
 interface ExchangeEntry {
   token: string
   user: object
@@ -23,8 +23,7 @@ function storeExchangeCode(token: string, user: object): string {
   return code
 }
 
-// ─── Email / Password Login ───────────────────────────────────────────────────
-
+// Email / Password Login
 auth.post('/login', async (c) => {
   const body = await c.req.json<{ email?: string; password?: string }>()
   const { email, password } = body
@@ -66,8 +65,7 @@ auth.post('/login', async (c) => {
   }
 })
 
-// ─── Get current user ────────────────────────────────────────────────────────
-
+// Get current user
 auth.get('/me', requireAuth, async (c) => {
   const { sub } = c.get('jwtPayload')
 
@@ -91,14 +89,9 @@ auth.get('/me', requireAuth, async (c) => {
   return c.json(employee)
 })
 
-// ─── Google SSO ───────────────────────────────────────────────────────────────
-//
+
 // Step 1: Redirect ไปหา Google consent screen
 //   GET /auth/google
-//
-// Step 2: Google redirect กลับมาพร้อม authorization code
-//   GET /auth/google/callback?code=xxx&state=xxx
-
 auth.get('/google', (c) => {
   // สร้าง state แบบ random เพื่อป้องกัน CSRF
   // state จะถูกเก็บใน httpOnly cookie แล้วนำมาเทียบกับ state ที่ Google ส่งกลับมา
@@ -115,6 +108,8 @@ auth.get('/google', (c) => {
   return c.redirect(googleUrl)
 })
 
+// Step 2: Google redirect กลับมาพร้อม authorization code
+//   GET /auth/google/callback?code=xxx&state=xxx
 auth.get('/google/callback', async (c) => {
   const { code, state, error } = c.req.query()
 
@@ -136,20 +131,14 @@ auth.get('/google/callback', async (c) => {
   }
 
   try {
-    // แลก code → access_token
     const tokens = await exchangeCodeForTokens(code)
-
-    // ดึงข้อมูล user จาก Google
     const userInfo = await getGoogleUserInfo(tokens.access_token)
 
     if (!userInfo.verified_email) {
       return c.redirect(`${process.env.FRONTEND_URL}/auth?error=email_not_verified`)
     }
 
-    // ตรวจสอบ employee ใน DB และ link/verify Google identity
     const user = await loginWithGoogle(userInfo.id, userInfo.email)
-
-    // ออก JWT เหมือนกับ login ปกติ
     const token = await sign(
       {
         sub: user.id,
@@ -183,7 +172,7 @@ auth.get('/google/callback', async (c) => {
   }
 })
 
-// ─── Exchange one-time code → JWT ────────────────────────────────────────────
+// Exchange one-time code to JWT
 auth.post('/exchange', async (c) => {
   const body = await c.req.json<{ code?: string }>()
   const { code } = body
@@ -193,7 +182,6 @@ auth.post('/exchange', async (c) => {
   const entry = exchangeStore.get(code)
   if (!entry) return c.json({ message: 'Invalid or expired code' }, 401)
 
-  // Single-use: delete immediately
   exchangeStore.delete(code)
 
   if (Date.now() > entry.exp) {

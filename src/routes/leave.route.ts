@@ -5,16 +5,12 @@ import * as LeaveService from '../services/leave.service.js'
 
 const leaveRouter = new Hono<{ Variables: AuthVariables }>()
 
-leaveRouter.use('*', requireAuth) // ต้อง login ก่อน
+leaveRouter.use('*', requireAuth)
 
-// POST /leaves
-// เฉพาะ user เท่านั้นที่ยื่นลาได้
-// เช็คว่าวันที่ซ้อนกับคำร้องเดิมไหม
 leaveRouter.post('/', requireRole('user'), async (c) => {
   const payload = c.get('jwtPayload')
   const body = await c.req.json()
-  // body ต้องมี: leaveType, startDate, endDate, reason
-  // optional: delegateName
+
   if (!body.leaveType || !body.startDate || !body.endDate || !body.reason)
     return c.json({ error: 'กรุณากรอกข้อมูลให้ครบ' }, 400)
   try {
@@ -27,19 +23,12 @@ leaveRouter.post('/', requireRole('user'), async (c) => {
   }
 })
 
-// GET /leaves/summary
-// สรุปสถิติการลาของ user ที่ login อยู่ในปีปัจจุบัน
 leaveRouter.get('/summary', async (c) => {
   const payload = c.get('jwtPayload')
   const result = await LeaveService.getLeaveSummary(payload.sub.toString())
   return c.json(result)
 })
 
-// GET /leaves
-// user → เห็นแค่การลาของตัวเอง
-// manager → เห็นเฉพาะแผนกตัวเอง
-// admin → เห็นทั้งหมด
-// ?status=pending กรองเฉพาะรออนุมัติได้
 leaveRouter.get('/', async (c) => {
   const payload = c.get('jwtPayload')
   const status = c.req.query('status')
@@ -52,7 +41,6 @@ leaveRouter.get('/', async (c) => {
   return c.json({ data: result })
 })
 
-// PATCH /leaves/:id/approve — อนุมัติ (เปลี่ยน status และบันทึกว่าใครเป็นคน review)
 leaveRouter.patch('/:id/approve', requireRole('admin', 'manager'), async (c) => {
   const payload = c.get('jwtPayload')
   try {
@@ -66,7 +54,6 @@ leaveRouter.patch('/:id/approve', requireRole('admin', 'manager'), async (c) => 
   }
 })
 
-// PATCH /leaves/:id/reject  — ปฏิเสธ (เปลี่ยน status และบันทึกว่าใครเป็นคน review)
 leaveRouter.patch('/:id/reject', requireRole('admin', 'manager'), async (c) => {
   const payload = c.get('jwtPayload')
   try {

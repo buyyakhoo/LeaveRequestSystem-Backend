@@ -5,12 +5,8 @@ import { getEventLogs } from '../services/event-log.service.js'
 
 const eventLogRouter = new Hono<{ Variables: AuthVariables }>()
 
-eventLogRouter.use('*', requireAuth) //login ก่อน
+eventLogRouter.use('*', requireAuth)
 
-// GET /event-logs
-// admin → เห็น log ทุกคน
-// manager → เห็นเฉพาะ log ของตัวเอง
-// ?limit=20 จำกัดจำนวน default 50
 eventLogRouter.get('/', requireRole('admin', 'manager'), async (c) => {
   const payload = c.get('jwtPayload')
   const limit = Number(c.req.query('limit') ?? 50)

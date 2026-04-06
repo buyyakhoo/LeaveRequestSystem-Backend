@@ -2,10 +2,7 @@ import { prisma } from '../lib/prisma.js'
 import { logEvent } from './event-log.service.js'
 import { hashPassword } from './user.service.js'
 
-// getEmployees: ดึงรายชื่อพนักงาน
 export const getEmployees = async (actorRole: string, actorDepartmentId: number | null) => {
-  
-  // ถ้า role=manager จะกรองเฉพาะ department_id ตัวเอง
   return prisma.employees.findMany({
     where: actorRole === 'manager' && actorDepartmentId
       ? { department_id: actorDepartmentId, role: 'user' }
@@ -25,7 +22,6 @@ export const getEmployees = async (actorRole: string, actorDepartmentId: number 
   })
 }
 
-// getEmployeeById: ดึงข้อมูลพนักงานคนเดียว
 export const getEmployeeById = async (id: string) => {
   return prisma.employees.findUnique({
     where: { id },
@@ -42,7 +38,6 @@ export const getEmployeeById = async (id: string) => {
   })
 }
 
-// createEmployee: สร้างพนักงานใหม่
 export const createEmployee = async (
   data: {
     email: string
@@ -56,7 +51,6 @@ export const createEmployee = async (
   actorId: string,
   actorRole: string
 ) => {
-  // 1. เช็ค email และ employee_code ซ้ำ
   const existing = await prisma.employees.findUnique({ where: { email: data.email } })
   if (existing) throw new Error('EMAIL_EXISTS')
 
@@ -65,10 +59,8 @@ export const createEmployee = async (
     if (existingCode) throw new Error('EMPLOYEE_CODE_EXISTS')
   }
 
-  // 2. hash password
   const hash = await hashPassword(data.password)
 
-  // 3. สร้าง employees row + employee_identities row พร้อมกัน
   const employee = await prisma.employees.create({
     data: {
       email: data.email,
@@ -87,7 +79,7 @@ export const createEmployee = async (
       role: true, status: true,
     },
   })
-  // 4. บันทึก event log
+
   await logEvent({
     actorId, actorRole, action: 'ADD_USER',
     targetId: employee.id, targetType: 'employee',
@@ -97,8 +89,6 @@ export const createEmployee = async (
   return employee
 }
 
-// disableEmployee: เปลี่ยน status เป็น disabled
-// เช็ค: มีอยู่ไหม, disabled แล้วหรือยัง, ห้าม disable admin
 export const disableEmployee = async (id: string, actorId: string, actorRole: string) => {
   const emp = await prisma.employees.findUnique({ where: { id } })
   if (!emp) throw new Error('NOT_FOUND')
@@ -121,7 +111,6 @@ export const disableEmployee = async (id: string, actorId: string, actorRole: st
   return { message: 'Disabled successfully' }
 }
 
-// promoteToManager: เลื่อนยศ user → manager (department ไม่เปลี่ยน)
 export const promoteToManager = async (id: string, actorId: string, actorRole: string) => {
   const emp = await prisma.employees.findUnique({ where: { id } })
   if (!emp) throw new Error('NOT_FOUND')
@@ -146,7 +135,6 @@ export const promoteToManager = async (id: string, actorId: string, actorRole: s
   return result
 }
 
-// demoteToUser: ลดระดับ manager → user (department ไม่เปลี่ยน)
 export const demoteToUser = async (id: string, actorId: string, actorRole: string) => {
   const emp = await prisma.employees.findUnique({ where: { id } })
   if (!emp) throw new Error('NOT_FOUND')
@@ -171,8 +159,6 @@ export const demoteToUser = async (id: string, actorId: string, actorRole: strin
   return result
 }
 
-// updateProfile: แก้ข้อมูลพนักงาน
-// ใช้ COALESCE — ถ้าไม่ส่งมาจะไม่อัปเดต field นั้น
 export const updateProfile = async (
   id: string,
   data: { firstName?: string; lastName?: string; departmentId?: number; employeeCode?: string },
@@ -182,7 +168,6 @@ export const updateProfile = async (
   const current = await prisma.employees.findUnique({ where: { id }, select: { employee_code: true, status: true } })
   if (!current) throw new Error('NOT_FOUND')
   if (current.status === 'disabled') throw new Error('EMPLOYEE_DISABLED')
-  // employeeCode: ตั้งได้เฉพาะตอน NULL เท่านั้น
   let employeeCodeUpdate: { employee_code: string } | undefined
   if (data.employeeCode) {
     if (current.employee_code !== null) throw new Error('EMPLOYEE_CODE_ALREADY_SET')
