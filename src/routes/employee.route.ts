@@ -31,7 +31,7 @@ employeeRouter.get('/:id', requireRole('admin', 'manager'), async (c) => {
       return c.json({ error: 'Forbidden: พนักงานนี้ไม่ได้อยู่ในแผนกของคุณ' }, 403)
     }
     if (emp.role !== 'user') {
-      return c.json({ error: 'Forbidden: ไม่ได้รับอนุญาตให้เข้าถึงข้อมูลของระดับผู้จัดการ' }, 403)
+      return c.json({ error: 'Forbidden: ไม่ได้รับอนุญาตให้เข้าถึงข้อมูล' }, 403)
     }
   }
   return c.json(emp)
@@ -52,8 +52,14 @@ employeeRouter.post('/', requireRole('admin', 'manager'), async (c) => {
     const emp = await EmployeeService.createEmployee(body, payload.sub.toString(), payload.role)
     return c.json(emp, 201)
   } catch (e: any) {
-    if (e.message === 'EMAIL_EXISTS') return c.json({ error: 'อีเมลนี้มีในระบบแล้ว' }, 409)
-    if (e.message === 'EMPLOYEE_CODE_EXISTS') return c.json({ error: 'รหัสพนักงานนี้มีในระบบแล้ว' }, 409)
+    if (e.message === 'EMAIL_EXISTS' || e.message === 'EMPLOYEE_CODE_EXISTS') {
+      return c.json({ error: 'ไม่สามารถสร้างบัญชีได้ ข้อมูลบางอย่างไม่ถูกต้องหรือมีอยู่ในระบบแล้ว' }, 409)
+    }
+    if (e.message === 'PASSWORD_BREACHED') {
+      return c.json({ 
+        error: 'รหัสผ่านนี้ไม่ปลอดภัย กรุณาตั้งรหัสผ่านใหม่' 
+      }, 400)
+    }
     throw e
   }
 })
@@ -65,8 +71,8 @@ employeeRouter.patch('/:id/demote', requireRole('admin'), async (c) => {
     return c.json(result)
   } catch (e: any) {
     if (e.message === 'NOT_FOUND') return c.json({ error: 'ไม่พบพนักงาน' }, 404)
-    if (e.message === 'EMPLOYEE_DISABLED') return c.json({ error: 'พนักงานนี้ถูก disable แล้ว' }, 409)
-    if (e.message === 'NOT_A_MANAGER') return c.json({ error: 'พนักงานนี้ไม่ได้เป็น Manager' }, 409)
+    if (e.message === 'EMPLOYEE_DISABLED') return c.json({ error: 'พนักงานนี้ลาออกแล้ว' }, 409)
+    if (e.message === 'NOT_A_MANAGER') return c.json({ error: 'พนักงานนี้บทบาทไม่ถูกต้อง' }, 409)
     throw e
   }
 })
@@ -78,8 +84,8 @@ employeeRouter.patch('/:id/promote', requireRole('admin'), async (c) => {
     return c.json(result)
   } catch (e: any) {
     if (e.message === 'NOT_FOUND') return c.json({ error: 'ไม่พบพนักงาน' }, 404)
-    if (e.message === 'EMPLOYEE_DISABLED') return c.json({ error: 'ไม่สามารถเลื่อนยศพนักงานที่ถูก disable' }, 409)
-    if (e.message === 'NOT_A_USER') return c.json({ error: 'พนักงานนี้ไม่ได้เป็น user หรือเป็น manager/admin อยู่แล้ว' }, 409)
+    if (e.message === 'EMPLOYEE_DISABLED') return c.json({ error: 'ไม่สามารถเลื่อนยศพนักงานที่ลาออก' }, 409)
+    if (e.message === 'NOT_A_USER') return c.json({ error: 'พนักงานนี้บทบาทไม่ถูกต้อง' }, 409)
     throw e
   }
 })
@@ -93,7 +99,7 @@ employeeRouter.patch('/:id/disable', requireRole('manager'), async (c) => {
     return c.json({ error: 'Forbidden: พนักงานนี้ไม่ได้อยู่ในแผนกของคุณ' }, 403)
 
   if (target.role !== 'user') {
-    return c.json({ error: 'Forbidden: HR ระงับบัญชีได้เฉพาะพนักงานทั่วไป (User) เท่านั้น' }, 403)
+    return c.json({ error: 'Forbidden: ระงับบัญชีได้เฉพาะพนักงานทั่วไป (User) เท่านั้น' }, 403)
   }
   
   try {
@@ -101,8 +107,8 @@ employeeRouter.patch('/:id/disable', requireRole('manager'), async (c) => {
     return c.json(result)
   } catch (e: any) {
     if (e.message === 'NOT_FOUND') return c.json({ error: 'ไม่พบพนักงาน' }, 404)
-    if (e.message === 'ALREADY_DISABLED') return c.json({ error: 'Disabled แล้ว' }, 409)
-    if (e.message === 'CANNOT_DISABLE_ADMIN') return c.json({ error: 'ไม่สามารถ disable admin' }, 403)
+    if (e.message === 'ALREADY_DISABLED') return c.json({ error: 'ลาออกแล้ว' }, 409)
+    if (e.message === 'CANNOT_DISABLE_ADMIN') return c.json({ error: 'ไม่สามารถบันทึกให้ admin ลาออกได้' }, 403)
     throw e
   }
 })
@@ -123,7 +129,7 @@ employeeRouter.patch('/:id/profile', async (c) => {
       return c.json({ error: 'Forbidden: พนักงานนี้ไม่ได้อยู่ในแผนกของคุณ' }, 403)
       
     if (target.role !== 'user') {
-      return c.json({ error: 'Forbidden: HR สามารถแก้ไขได้เฉพาะข้อมูลของพนักงานทั่วไป (User) เท่านั้น' }, 403)
+      return c.json({ error: 'Forbidden: สามารถแก้ไขได้เฉพาะข้อมูลของพนักงานทั่วไป (User) เท่านั้น' }, 403)
     }
   }
 

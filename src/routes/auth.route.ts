@@ -96,10 +96,9 @@ auth.get('/google', (c) => {
   // สร้าง state แบบ random เพื่อป้องกัน CSRF
   // state จะถูกเก็บใน httpOnly cookie แล้วนำมาเทียบกับ state ที่ Google ส่งกลับมา
   const state = crypto.randomBytes(16).toString('hex')
-
   const googleUrl = buildGoogleAuthUrl(state)
 
-  // เก็บ state ใน cookie อายุ 10 นาที (แค่พอสำหรับ OAuth flow)
+  // เก็บ state ใน cookie อายุ 10 นาที
   c.header(
     'Set-Cookie',
     `oauth_state=${state}; HttpOnly; SameSite=Lax; Max-Age=600; Path=/`
@@ -113,7 +112,6 @@ auth.get('/google', (c) => {
 auth.get('/google/callback', async (c) => {
   const { code, state, error } = c.req.query()
 
-  // ถ้า user กด deny ที่ Google
   if (error) {
     return c.redirect(`${process.env.FRONTEND_URL}/auth?error=oauth_denied`)
   }

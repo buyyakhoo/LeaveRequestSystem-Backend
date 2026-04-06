@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma.js'
 import { logEvent } from './event-log.service.js'
-import { hashPassword } from './user.service.js'
+import { hashPassword, isPasswordBreached } from './user.service.js'
 
 export const getEmployees = async (actorRole: string, actorDepartmentId: number | null) => {
   return prisma.employees.findMany({
@@ -58,6 +58,9 @@ export const createEmployee = async (
     const existingCode = await prisma.employees.findUnique({ where: { employee_code: data.employeeCode } })
     if (existingCode) throw new Error('EMPLOYEE_CODE_EXISTS')
   }
+
+  const breached = await isPasswordBreached(data.password)
+  if (breached) throw new Error('PASSWORD_BREACHED')
 
   const hash = await hashPassword(data.password)
 
