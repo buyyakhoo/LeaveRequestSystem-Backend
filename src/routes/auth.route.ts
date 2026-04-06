@@ -120,11 +120,11 @@ auth.get('/google/callback', async (c) => {
 
   // ถ้า user กด deny ที่ Google
   if (error) {
-    return c.redirect(`${process.env.FRONTEND_URL}/login?error=oauth_denied`)
+    return c.redirect(`${process.env.FRONTEND_URL}/auth?error=oauth_denied`)
   }
 
   if (!code || !state) {
-    return c.redirect(`${process.env.FRONTEND_URL}/login?error=invalid_callback`)
+    return c.redirect(`${process.env.FRONTEND_URL}/auth?error=invalid_callback`)
   }
 
   // ตรวจ state cookie เพื่อป้องกัน CSRF
@@ -132,7 +132,7 @@ auth.get('/google/callback', async (c) => {
   const stateCookie = /(?:^|;\s*)oauth_state=([^;]+)/.exec(cookieHeader)?.[1]
 
   if (!stateCookie || state !== stateCookie) {
-    return c.redirect(`${process.env.FRONTEND_URL}/login?error=invalid_state`)
+    return c.redirect(`${process.env.FRONTEND_URL}/auth?error=invalid_state`)
   }
 
   try {
@@ -143,7 +143,7 @@ auth.get('/google/callback', async (c) => {
     const userInfo = await getGoogleUserInfo(tokens.access_token)
 
     if (!userInfo.verified_email) {
-      return c.redirect(`${process.env.FRONTEND_URL}/login?error=email_not_verified`)
+      return c.redirect(`${process.env.FRONTEND_URL}/auth?error=email_not_verified`)
     }
 
     // ตรวจสอบ employee ใน DB และ link/verify Google identity
@@ -179,7 +179,7 @@ auth.get('/google/callback', async (c) => {
     }
     const errorCode = err instanceof Error ? (errorMap[err.message] ?? null) : null
     if (!errorCode) console.error(err)
-    return c.redirect(`${process.env.FRONTEND_URL}/login?error=${errorCode ?? 'server_error'}`)
+    return c.redirect(`${process.env.FRONTEND_URL}/auth?error=${errorCode ?? 'server_error'}`)
   }
 })
 

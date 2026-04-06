@@ -11,7 +11,7 @@ import { prisma } from './lib/prisma.js'
 const app = new Hono()
 
 app.use('*', cors({
-  origin: 'http://localhost:5173',
+  origin: ['http://localhost:5173', 'https://comsciseat.app', 'https://www.comsciseat.app'],
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }))

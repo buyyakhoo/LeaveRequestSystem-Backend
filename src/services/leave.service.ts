@@ -55,11 +55,17 @@ export const createLeaveRequest = async (
 export const getLeaveRequests = async (
   actorId: string,
   actorRole: string,
-  status?: string
+  status?: string,
+  actorDepartmentId?: number | null
 ) => {
   // user → WHERE employee_id = ตัวเอง
+  // manager → WHERE employee.department_id = แผนกตัวเอง
+  // admin → เห็นทั้งหมด
   const where = {
     ...(actorRole === 'user' && { employee_id: actorId }),
+    ...(actorRole === 'manager' && actorDepartmentId && {
+      employee: { department_id: actorDepartmentId }
+    }),
     ...(status && { status: status as any }),
   }
 

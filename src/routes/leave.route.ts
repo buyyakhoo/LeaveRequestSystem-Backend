@@ -37,12 +37,18 @@ leaveRouter.get('/summary', async (c) => {
 
 // GET /leaves
 // user → เห็นแค่การลาของตัวเอง
-// admin/manager → เห็นทั้งหมด
+// manager → เห็นเฉพาะแผนกตัวเอง
+// admin → เห็นทั้งหมด
 // ?status=pending กรองเฉพาะรออนุมัติได้
 leaveRouter.get('/', async (c) => {
   const payload = c.get('jwtPayload')
   const status = c.req.query('status')
-  const result = await LeaveService.getLeaveRequests(payload.sub.toString(), payload.role, status)
+  const result = await LeaveService.getLeaveRequests(
+    payload.sub.toString(),
+    payload.role,
+    status,
+    (payload as any).department_id
+  )
   return c.json({ data: result })
 })
 
