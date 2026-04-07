@@ -1,6 +1,46 @@
 import { prisma } from '../lib/prisma.js'
 import { logEvent } from './event-log.service.js'
 
+const updateLeaveStatus = async (
+  leaveId: string,
+  actorId: string,
+  actorRole: string,
+  targetStatus: 'approved' | 'rejected', // รับ status ปลายทางเข้ามา
+  actorDepartmentId?: number | null
+) => {
+  const leave = await prisma.leave_requests.findUnique({
+    where: { id: leaveId },
+    include: { employee: { select: { department_id: true, email: true } } },
+  })
+  
+  if (!leave) throw new Error('NOT_FOUND')
+  if (leave.status !== 'pending') throw new Error('NOT_PENDING')
+
+  if (actorRole === 'manager') {
+    if (!actorDepartmentId || leave.employee.department_id !== actorDepartmentId) {
+      throw new Error('FORBIDDEN')
+    }
+  }
+
+  const result = await prisma.leave_requests.update({
+    where: { id: leaveId },
+    data: { status: targetStatus, reviewed_by: actorId, reviewed_at: new Date() },
+  })
+
+  const logAction = targetStatus === 'approved' ? 'LEAVE_APPROVE' : 'LEAVE_REJECT'
+
+  await logEvent({ 
+    actorId, 
+    actorRole, 
+    action: logAction, 
+    targetId: leaveId, 
+    targetType: 'leave_request', 
+    detail: { email: leave.employee.email } 
+  })
+  
+  return result
+}
+
 export const createLeaveRequest = async (
   data: {
     leaveType: string
@@ -102,45 +142,9 @@ export const getLeaveSummary = async (actorId: string) => {
 }
 
 export const approveLeave = async (leaveId: string, actorId: string, actorRole: string, actorDepartmentId?: number | null) => {
-  const leave = await prisma.leave_requests.findUnique({
-    where: { id: leaveId },
-    include: { employee: { select: { department_id: true, email: true } } },
-  })
-  if (!leave) throw new Error('NOT_FOUND')
-  if (leave.status !== 'pending') throw new Error('NOT_PENDING')
-
-  if (actorRole === 'manager') {
-    if (!actorDepartmentId || leave.employee.department_id !== actorDepartmentId)
-      throw new Error('FORBIDDEN')
-  }
-
-  const result = await prisma.leave_requests.update({
-    where: { id: leaveId },
-    data: { status: 'approved', reviewed_by: actorId, reviewed_at: new Date() },
-  })
-
-  await logEvent({ actorId, actorRole, action: 'LEAVE_APPROVE', targetId: leaveId, targetType: 'leave_request', detail: { email: leave.employee.email } })
-  return result
+  return updateLeaveStatus(leaveId, actorId, actorRole, 'approved', actorDepartmentId)
 }
 
 export const rejectLeave = async (leaveId: string, actorId: string, actorRole: string, actorDepartmentId?: number | null) => {
-  const leave = await prisma.leave_requests.findUnique({
-    where: { id: leaveId },
-    include: { employee: { select: { department_id: true, email: true } } },
-  })
-  if (!leave) throw new Error('NOT_FOUND')
-  if (leave.status !== 'pending') throw new Error('NOT_PENDING')
-
-  if (actorRole === 'manager') {
-    if (!actorDepartmentId || leave.employee.department_id !== actorDepartmentId)
-      throw new Error('FORBIDDEN')
-  }
-
-  const result = await prisma.leave_requests.update({
-    where: { id: leaveId },
-    data: { status: 'rejected', reviewed_by: actorId, reviewed_at: new Date() },
-  })
-
-  await logEvent({ actorId, actorRole, action: 'LEAVE_REJECT', targetId: leaveId, targetType: 'leave_request', detail: { email: leave.employee.email } })
-  return result
+  return updateLeaveStatus(leaveId, actorId, actorRole, 'rejected', actorDepartmentId)
 }

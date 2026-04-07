@@ -2,6 +2,41 @@ import { prisma } from '../lib/prisma.js'
 import { logEvent } from './event-log.service.js'
 import { hashPassword, isPasswordBreached } from './user.service.js'
 
+const updateEmployeeRole = async (
+  id: string,
+  actorId: string,
+  actorRole: string,
+  actionType: 'promote' | 'demote'
+) => {
+  const requiredRole = actionType === 'promote' ? 'user' : 'manager'
+  const targetRole = actionType === 'promote' ? 'manager' : 'user'
+  const errorMsg = actionType === 'promote' ? 'NOT_A_USER' : 'NOT_A_MANAGER'
+  const logAction = actionType === 'promote' ? 'PROMOTE_USER' : 'DEMOTE_USER'
+
+  const emp = await prisma.employees.findUnique({ where: { id } })
+  
+  if (!emp) throw new Error('NOT_FOUND')
+  if (emp.status === 'disabled') throw new Error('EMPLOYEE_DISABLED')
+  if (emp.role !== requiredRole) throw new Error(errorMsg)
+
+  const result = await prisma.employees.update({
+    where: { id },
+    data: { role: targetRole, updated_at: new Date() },
+    select: {
+      id: true, email: true, first_name: true, last_name: true,
+      role: true, departments: { select: { id: true, name: true } },
+    },
+  })
+
+  await logEvent({
+    actorId, actorRole, action: logAction,
+    targetId: id, targetType: 'employee',
+    detail: { email: emp.email },
+  })
+
+  return result
+}
+
 export const getEmployees = async (actorRole: string, actorDepartmentId: number | null) => {
   return prisma.employees.findMany({
     where: actorRole === 'manager' && actorDepartmentId
@@ -115,51 +150,11 @@ export const disableEmployee = async (id: string, actorId: string, actorRole: st
 }
 
 export const promoteToManager = async (id: string, actorId: string, actorRole: string) => {
-  const emp = await prisma.employees.findUnique({ where: { id } })
-  if (!emp) throw new Error('NOT_FOUND')
-  if (emp.status === 'disabled') throw new Error('EMPLOYEE_DISABLED')
-  if (emp.role !== 'user') throw new Error('NOT_A_USER')
-
-  const result = await prisma.employees.update({
-    where: { id },
-    data: { role: 'manager', updated_at: new Date() },
-    select: {
-      id: true, email: true, first_name: true, last_name: true,
-      role: true, departments: { select: { id: true, name: true } },
-    },
-  })
-
-  await logEvent({
-    actorId, actorRole, action: 'PROMOTE_USER',
-    targetId: id, targetType: 'employee',
-    detail: { email: emp.email },
-  })
-
-  return result
+  return updateEmployeeRole(id, actorId, actorRole, 'promote')
 }
 
 export const demoteToUser = async (id: string, actorId: string, actorRole: string) => {
-  const emp = await prisma.employees.findUnique({ where: { id } })
-  if (!emp) throw new Error('NOT_FOUND')
-  if (emp.status === 'disabled') throw new Error('EMPLOYEE_DISABLED')
-  if (emp.role !== 'manager') throw new Error('NOT_A_MANAGER')
-
-  const result = await prisma.employees.update({
-    where: { id },
-    data: { role: 'user', updated_at: new Date() },
-    select: {
-      id: true, email: true, first_name: true, last_name: true,
-      role: true, departments: { select: { id: true, name: true } },
-    },
-  })
-
-  await logEvent({
-    actorId, actorRole, action: 'DEMOTE_USER',
-    targetId: id, targetType: 'employee',
-    detail: { email: emp.email },
-  })
-
-  return result
+  return updateEmployeeRole(id, actorId, actorRole, 'demote')
 }
 
 export const updateProfile = async (

@@ -11,7 +11,6 @@ const ARGON2_OPTIONS: argon2.Options & { raw?: false } = {
 }
 
 // OWASP Password Policy
-
 export const PASSWORD_MIN_LENGTH = 15
 export const PASSWORD_MAX_LENGTH = 128
 

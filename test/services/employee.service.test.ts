@@ -153,8 +153,6 @@ describe('EmployeeService', () => {
       
       vi.mocked(prisma.employees.update).mockResolvedValue({ id: 'id', first_name: 'New' } as any)
       
-      const result = await updateProfile('id', { firstName: 'New', employeeCode: 'EMP99' }, actorId, 'admin')
-      
       expect(prisma.employees.update).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({ first_name: 'New', employee_code: 'EMP99' })
       }))

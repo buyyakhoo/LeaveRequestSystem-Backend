@@ -7,7 +7,7 @@ describe('GoogleAuthService', () => {
   beforeEach(() => {
     vi.resetModules()
     process.env = { ...originalEnv, CLIENT_ID: 'test-client', GOOGLE_REDIRECT_URI: 'http://test/cb' }
-    global.fetch = vi.fn()
+    globalThis.fetch = vi.fn()
   })
 
   afterEach(() => {

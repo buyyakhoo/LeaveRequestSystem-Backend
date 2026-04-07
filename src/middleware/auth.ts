@@ -31,7 +31,7 @@ export const requireAuth = createMiddleware<{ Variables: AuthVariables }>(async 
       select: { role: true, status: true, department_id: true }
     })
 
-    if (!freshUser || freshUser.status !== 'active') {
+    if (freshUser?.status !== 'active') {
       return c.json({ message: 'Account disabled or not found' }, 401)
     }
 

@@ -17,5 +17,6 @@ WORKDIR /app
 COPY --from=builder /app/dist/ dist/
 COPY package-lock.json .
 COPY package.json .
-RUN npm install --production
+RUN npm install --production && chown -R node:node /app
+USER node
 CMD ["npm", "run", "start"]
